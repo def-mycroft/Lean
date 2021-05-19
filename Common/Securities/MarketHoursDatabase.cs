@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -153,7 +153,22 @@ namespace QuantConnect.Securities
         /// <returns>A new instance of the <see cref="MarketHoursDatabase"/> class</returns>
         public static MarketHoursDatabase FromFile(string path)
         {
-            return JsonConvert.DeserializeObject<MarketHoursDatabase>(File.ReadAllText(path));
+            try
+            {
+                return JsonConvert.DeserializeObject<MarketHoursDatabase>(File.ReadAllText(path));
+            }
+            catch (Exception e)
+            {
+                var aggregated = e as AggregateException;
+                if (aggregated != null)
+                {
+                    foreach (var innerException in aggregated.InnerExceptions)
+                    {
+                        Log.Error(innerException);
+                    }
+                }
+                throw;
+            }
         }
 
         /// <summary>
