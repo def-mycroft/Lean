@@ -82,6 +82,51 @@ self.bolband = self.BB(self.syl,self.numdays, decimal.Decimal(2),
      self.lowband = self.bolband.LowerBand
 ```
 
+# Step 3: Choose the algorithm liquidation point
+
+The exit signal for an existing holding is determined by calculating a simple
+moving average of closing prices for the past look back days. That is to say, we
+liquidate a long position if the current price is lower than the moving average
+of the close price over the look back period, and vice versa for selling a short
+position.
+
+```
+self.buypoint = max(self.high)
+self.sellpoint = min(self.low)
+historyclose = self.History(self.syl, self.numdays, Resolution.Daily)['close']
+self.longLiqPoint = np.mean(historyclose)
+self.shortLiqPoint = np.mean(historyclose)
+self.yesterdayclose = historyclose.iloc[-1]
+```
+
+# Conclusion
+
+For six years backtesting of EURUSD, the overall statistics show an annual rate
+of return of 2.3% and with a Sharpe Ratio of 0.31. EURUSD has a significant
+uptrend from 2010 to 2012. This momentum strategy outperforms the market and
+seems to be profitable from 2010 to 2014.  The maximum drawdown occurs in May
+2015 to December 2015 and is roughly 14%. From our results we find the strategy
+works best in an trending forex market.
+
+In contrast, GBPUSD is pretty volatile during the tested period from 2010 to
+2016. Our testing demonstrated a negative annual rate of return with a drawdown
+of approximately 19%. When the volatility decreases, the price tends to continue
+following the current trend. Volatility causes the the look back days to
+decrease when computing the bollinger bands, making it easier to enter a trade.
+If the market volatility increases we increase the look back days in order to
+filter the fake signals, making it harder to enter a trade.
+
+Here we use the standard deviation of price as a measure of market volatility.
+To improve the model we could choose other measures of volatility like standard
+deviation of logarithm return series or other stochastic volatility measures.
+
+# References
+
+George Pruitt, John R. Hill, Michael Russak (September 2012). Building Winning
+Trading Systems, page 126,  Online Copy
+
+Robert C. Miner(October 20, 2008). High Probability Trading Strategies: Entry to
+Exit Tactics for the Forex, Futures, and Stock Markets, page 37,  Online Copy
 
 ################################################################################
 
@@ -138,8 +183,10 @@ class DynamicBreakoutAlgorithm(QCAlgorithm):
             self.numdays = self.floor
         
         # create variables for daily high price and daily low price
-        self.high = self.History(self.syl, self.numdays, Resolution.Daily)['high']
-        self.low = self.History(self.syl, self.numdays, Resolution.Daily)['low']      
+        self.high = \
+            self.History(self.syl, self.numdays, Resolution.Daily)['high']
+        self.low = \
+            self.History(self.syl, self.numdays, Resolution.Daily)['low']      
 
         # set buy and sell points, stop loss levels 
         self.buypoint = max(self.high)
@@ -153,16 +200,40 @@ class DynamicBreakoutAlgorithm(QCAlgorithm):
         # wait for our BollingerBand to fully initialize
         if not self.Bolband.IsReady: return
 
-        holdings = self.Portfolio[self.syl].Quantity
     
-        if self.yesterdayclose > self.Bolband.UpperBand.Current.Value and self.Portfolio[self.syl].Price >= self.buypoint:
+        # TODO - this doesn't need to be evaluated if there is a position
+        ## initiate long position as needed 
+        close_above_upper_band = \
+            self.yesterdayclose > self.Bolband.UpperBand.Current.Value
+        price_above_buy_point = \
+            self.Portfolio[self.syl].Price >= self.buypoint
+        # if closed above band yesterday and still there...
+        if close_above_upper_band and price_above_buy_point:
+            # ... purchase 1 unit 
             self.SetHoldings(self.syl, 1)
-        elif self.yesterdayclose < self.Bolband.LowerBand.Current.Value and self.Portfolio[self.syl].Price <= self.sellpoint:
+
+        ## initiate short position as needed 
+        close_below_lower_band = \
+            self.yesterdayclose < self.Bolband.LowerBand.Current.Value
+        price_below_sell_point = \
+            self.Portfolio[self.syl].Price <= self.sellpoint
+        # if closed below band yesterday and still there...
+        elif close_below_lower_band and price_below_sell_point:
+            # ...sell 1 unit 
             self.SetHoldings(self.syl, -1)
 
-        if holdings > 0 and self.Portfolio[self.syl].Price <= self.shortLiqPoint:
+        ## exit at risk points as needed 
+        holdings = self.Portfolio[self.syl].Quantity
+        price_below_long_stop = \
+            # TODO - this appears to be a bug, should be longLiqPoint
+            self.Portfolio[self.syl].Price <= self.longLiqPoint
+        # if long and price_below_long_stop, exit position 
+        if holdings > 0 and price_below_long_stop:
             self.Liquidate(self.syl)
-        elif holdings < 0 and self.Portfolio[self.syl].Price >= self.shortLiqPoint:
+        # if short and price_above_short_stop, exit position 
+        price_above_short_stop = \
+            self.Portfolio[self.syl].Price >= self.shortLiqPoint
+        elif holdings < 0 and price_above_short_stop:
             self.Liquidate(self.syl)
       
         self.Log(str(self.yesterdayclose)+(" # of days ")+(str(self.numdays)))
